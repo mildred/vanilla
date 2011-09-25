@@ -27,7 +27,7 @@ THE SOFTWARE.
 		<org.kreed.vanilla.VolumePreference
 			android:key="volume"
 			android:title="@string/volume_title"
-			android:summary="@string/volume_summary" />
+			android:summary="@string/volume_summary"/>
 		<CheckBoxPreference
 			android:key="media_button"
 			android:title="@string/media_button_title"
@@ -130,6 +130,25 @@ THE SOFTWARE.
 			android:entries="@array/default_action_entries"
 			android:entryValues="@array/entry_values"
 			android:defaultValue="0" />
+	</PreferenceCategory>
+	<PreferenceCategory android:title="@string/pref_replaygain">
+		<CheckBoxPreference
+			android:title="@string/enable_replaygain"
+			android:key="enable_replaygain"
+			android:summary="@string/enable_replaygain_summary"
+			android:defaultValue="false" />
+		<org.kreed.vanilla.PreferenceDecibelValues
+			android:key="replaygain_max_boost"
+			android:title="@string/replaygain_max_boost_title"
+			android:summary="@string/replaygain_max_boost_summary"
+			android:entryValues="@array/replaygain_max_boost_entries"
+			android:defaultValue="3"/>
+		<org.kreed.vanilla.PreferenceDecibelValues
+			android:key="replaygain_no_data_attenuation"
+			android:title="@string/replaygain_no_data_attenuation_title"
+			android:summary="@string/replaygain_no_data_attenuation_summary"
+			android:entryValues="@array/replaygain_no_data_attenuation_entries" 
+			android:defaultValue="-10"/>
 	</PreferenceCategory>
 	<PreferenceCategory android:title="@string/pref_misc">
 		<CheckBoxPreference

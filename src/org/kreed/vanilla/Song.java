@@ -135,6 +135,8 @@ public class Song implements Comparable<Song> {
 	 */
 	public int flags;
 
+	private ReplayGainInfo mReplayGainInfo;
+
 	/**
 	 * Initialize the song with the specified id. Call populate to fill fields
 	 * in the song.
@@ -191,6 +193,32 @@ public class Song implements Comparable<Song> {
 		if (song == null)
 			return 0;
 		return song.id;
+	}
+
+	public boolean isPopulated()
+	{
+		return path.length() != 0;
+	}
+
+	public static class NotPopulatedException extends Exception {
+		public NotPopulatedException(String detailMessage)
+		{
+			super(detailMessage);
+		}
+
+		private static final long serialVersionUID = 1;
+	};
+
+	public ReplayGainInfo getReplayGainInfo() throws NotPopulatedException
+	{
+		if (mReplayGainInfo == null) {
+			if (!isPopulated())
+				throw(new NotPopulatedException("The song must be populated before ReplayGain info can be retrieved."));
+
+			mReplayGainInfo = new ReplayGainInfo(path);
+		}
+
+		return mReplayGainInfo;
 	}
 
 	private static final BitmapFactory.Options BITMAP_OPTIONS = new BitmapFactory.Options();

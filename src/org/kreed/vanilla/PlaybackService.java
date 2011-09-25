@@ -53,6 +53,7 @@ import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import org.kreed.vanilla.Song.NotPopulatedException;
 
 public final class PlaybackService extends Service implements Handler.Callback, MediaPlayer.OnCompletionListener, MediaPlayer.OnErrorListener, SharedPreferences.OnSharedPreferenceChangeListener, SongTimeline.Callback {
 	/**
@@ -226,6 +227,10 @@ public final class PlaybackService extends Service implements Handler.Callback, 
 	 */
 	private float mCurrentVolume = 1.0f;
 
+	private boolean mEnableReplayGain;
+	private AmplitudeGain mReplayGainMaxBoostDecibels;
+	private AmplitudeGain mReplayGainNoDataAttenuationDecibels;
+
 	@Override
 	public void onCreate()
 	{
@@ -258,6 +263,14 @@ public final class PlaybackService extends Service implements Handler.Callback, 
 		mHeadsetOnly = settings.getBoolean("headset_only", false);
 		mStockBroadcast = settings.getBoolean("stock_broadcast", false);
 		mHeadsetPlay = settings.getBoolean("headset_play", false);
+
+		setVolumeFromPreferences();
+
+		mEnableReplayGain = settings.getBoolean("enable_replaygain", false);
+		mReplayGainMaxBoostDecibels =
+			AmplitudeGain.inDecibels(Float.valueOf(settings.getString("replaygain_max_boost", "3.0")));
+		mReplayGainNoDataAttenuationDecibels
+			= AmplitudeGain.inDecibels(Float.valueOf(settings.getString("replaygain_no_data_attenuation", "-10")));
 
 		PowerManager powerManager = (PowerManager)getSystemService(POWER_SERVICE);
 		mWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "VanillaMusicLock");
@@ -360,6 +373,15 @@ public final class PlaybackService extends Service implements Handler.Callback, 
 		return sSettings;
 	}
 
+	private void setVolumeFromPreferences()
+	{
+		float volume = getSettings(this).getFloat("volume", 1.0f);
+		if (volume != 1.0f) {
+			mCurrentVolume = mUserVolume = volume;
+			mMediaPlayer.setVolume(volume, volume);
+		}
+	}
+
 	private void loadPreference(String key)
 	{
 		SharedPreferences settings = getSettings(this);
@@ -377,11 +399,21 @@ public final class PlaybackService extends Service implements Handler.Callback, 
 			updateNotification();
 		} else if ("scrobble".equals(key)) {
 			mScrobble = settings.getBoolean("scrobble", false);
+		} else if ("enable_replaygain".equals(key)) {
+			mEnableReplayGain = settings.getBoolean(key, false);
+		} else if ("replaygain_max_boost".equals(key)) {
+			mReplayGainMaxBoostDecibels = AmplitudeGain.inDecibels(
+					Float.valueOf(settings.getString(key, "3.0"))
+				);
+		} else if ("replaygain_no_data_attenuation".equals(key)) {
+			mReplayGainNoDataAttenuationDecibels = AmplitudeGain.inDecibels(
+					Float.valueOf(settings.getString(key, "-10.0"))
+				);
 		} else if ("volume".equals(key)) {
 			float volume = settings.getFloat("volume", 1.0f);
 			mCurrentVolume = mUserVolume = volume;
 			if (mMediaPlayer != null)
-				mMediaPlayer.setVolume(volume, volume);
+				ensureMediaPlayerVolume();
 		} else if ("media_button".equals(key)) {
 			MediaButtonHandler.reloadPreference(this);
 		} else if ("use_idle_timeout".equals(key) || "idle_timeout".equals(key)) {
@@ -412,6 +444,36 @@ public final class PlaybackService extends Service implements Handler.Callback, 
 		} else if ("headset_play".equals(key)) {
 			mHeadsetPlay = settings.getBoolean(key, false);
 		}
+	}
+
+	/**
+	 * Returns the amount of gain that should be applied to the player's volume for the given Song.
+	 */
+	private AmplitudeGain getReplayGainAmount(Song song)
+	{
+		AmplitudeGain trackGain = null;
+
+		try {
+			if (song.getReplayGainInfo() == null) {
+				trackGain = mReplayGainNoDataAttenuationDecibels;
+			} else if (!song.getReplayGainInfo().hasTrackGain()) {
+				final AmplitudeGain preampWhenNoReplayGainDb = mReplayGainNoDataAttenuationDecibels;
+
+				trackGain = preampWhenNoReplayGainDb;
+				Log.i(this.getClass().getName(), String.format("ReplayGain: no replaygain info for this track, applying constant attenuation %s.", trackGain));
+			} else {
+				final AmplitudeGain preampWhenReplayGainDb = AmplitudeGain.inDecibels(-mReplayGainMaxBoostDecibels.decibels());
+
+				trackGain = song.getReplayGainInfo().trackGain();
+				trackGain = trackGain.increment(preampWhenReplayGainDb);
+				Log.i(this.getClass().getName(), String.format("ReplayGain: setting track gain to %s + %s = %s", song.getReplayGainInfo().trackGain(), preampWhenReplayGainDb, trackGain));
+			}
+		} catch (NotPopulatedException e) {
+			assert(false); // song should always be populated by this point.
+			trackGain = mReplayGainNoDataAttenuationDecibels;
+		}
+
+		return trackGain;
 	}
 
 	/**
@@ -475,6 +537,8 @@ public final class PlaybackService extends Service implements Handler.Callback, 
 		if ((toggled & FLAG_PLAYING) != 0) {
 			if ((state & FLAG_PLAYING) != 0) {
 				if (mMediaPlayerInitialized)
+					if (mCurrentSong != null)
+						applyReplayGain(mCurrentSong);
 					mMediaPlayer.start();
 
 				if (mNotificationMode != NEVER)
@@ -744,8 +808,10 @@ public final class PlaybackService extends Service implements Handler.Callback, 
 				mPendingSeek = 0;
 			}
 
-			if ((mState & FLAG_PLAYING) != 0)
+			if ((mState & FLAG_PLAYING) != 0) {
+				applyReplayGain(song);
 				mMediaPlayer.start();
+			}
 
 			if ((mState & FLAG_ERROR) != 0) {
 				mErrorMessage = null;
@@ -761,6 +827,38 @@ public final class PlaybackService extends Service implements Handler.Callback, 
 		updateNotification();
 
 		mTimeline.purge();
+	}
+
+	/**
+	 * Makes sure that the media player volume is set appropriately given the current user
+	 * preference settings. This method should be called in preference to setVolumeFromPreferences
+	 * because it also takes into account ReplayGain preferences based on the current song.
+	 */
+	private void ensureMediaPlayerVolume()
+	{
+		if (mCurrentSong != null)
+			applyReplayGain(mCurrentSong);
+		else
+			setVolumeFromPreferences();
+	}
+
+	/**
+	 * Sets data in the media player necessary for normalizing volume with ReplayGain for the
+	 * given Song instance.
+	 */
+	private void applyReplayGain(Song song)
+	{
+		// The preference screen may be accessed before the media player is initialized.
+		if (mMediaPlayer == null)
+			return;
+
+		if (!mEnableReplayGain) {
+			setVolumeFromPreferences();
+		} else {
+			float trackGainScale = getReplayGainAmount(song).linearScale();
+			mMediaPlayer.setVolume(trackGainScale, trackGainScale);
+			mCurrentVolume = trackGainScale;
+		}
 	}
 
 	@Override
@@ -882,6 +980,9 @@ public final class PlaybackService extends Service implements Handler.Callback, 
 	public void onSharedPreferenceChanged(SharedPreferences settings, String key)
 	{
 		loadPreference(key);
+
+		if (mCurrentSong != null)
+			applyReplayGain(mCurrentSong);
 	}
 
 	private void setupReceiver()
@@ -968,6 +1069,7 @@ public final class PlaybackService extends Service implements Handler.Callback, 
 				mCurrentVolume = Math.max((float)(Math.pow(progress / 100f, 4) * mUserVolume), .01f);
 				mHandler.sendMessageDelayed(mHandler.obtainMessage(FADE_OUT, progress, 0), 50);
 			}
+
 			if (mMediaPlayer != null)
 				mMediaPlayer.setVolume(mCurrentVolume, mCurrentVolume);
 			break;
@@ -1104,7 +1206,7 @@ public final class PlaybackService extends Service implements Handler.Callback, 
 
 		if (mCurrentVolume != mUserVolume) {
 			mCurrentVolume = mUserVolume;
-			mMediaPlayer.setVolume(mCurrentVolume, mCurrentVolume);
+			ensureMediaPlayerVolume();
 		}
 	}
 

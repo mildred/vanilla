@@ -117,7 +117,7 @@ THE SOFTWARE.
 
 	<string name="pref_output">Audio Output</string>
 	<string name="volume_title">Volume</string>
-	<string name="volume_summary">Music volume</string>
+	<string name="volume_summary">Music volume. Not applicable when ReplayGain is enabled.</string>
 	<string name="media_button_title">Use Headset Controls</string>
 	<string name="media_button_summary">Single click for play/pause. Double click for next.</string>
 	<string name="headset_only_title">External Output Only</string>
@@ -168,4 +168,11 @@ THE SOFTWARE.
 	<string name="scrobble_summary">Scrobble to Last.FM through ScrobbleDroid or Simple Last.FM Scrobbler</string>
 	<string name="stock_broadcast_title">Emulate Stock Broadcasts</string>
 	<string name="stock_broadcast_summary">Send broadcasts emulating those sent by the stock music player to work with 3rd party lockscreen controls, widgets, etc.</string>
+	<string name="enable_replaygain">Enable ReplayGain</string>
+	<string name="enable_replaygain_summary">Ensures that all songs play at a similar volume. ReplayGain data must have been written into the files.</string>
+	<string name="pref_replaygain">ReplayGain</string>
+	<string name="replaygain_max_boost_summary">The maximum amount that quiet songs can be boosted. The larger this value, the quieter all songs will be.</string>
+	<string name="replaygain_max_boost_title">Max Volume Boost</string>
+  <string name="replaygain_no_data_attenuation_title">Fallback Volume</string> 
+  <string name="replaygain_no_data_attenuation_summary">Songs without ReplayGain data are usually too loud. This value sets how much quieter they should be.</string> 
 </resources>
