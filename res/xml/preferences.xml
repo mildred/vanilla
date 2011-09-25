@@ -139,12 +139,14 @@ THE SOFTWARE.
 			android:defaultValue="false" />
 		<org.kreed.vanilla.PreferenceDecibelValues
 			android:key="replaygain_max_boost"
+			android:dependency="enable_replaygain"
 			android:title="@string/replaygain_max_boost_title"
 			android:summary="@string/replaygain_max_boost_summary"
 			android:entryValues="@array/replaygain_max_boost_entries"
 			android:defaultValue="3"/>
 		<org.kreed.vanilla.PreferenceDecibelValues
 			android:key="replaygain_no_data_attenuation"
+			android:dependency="enable_replaygain"
 			android:title="@string/replaygain_no_data_attenuation_title"
 			android:summary="@string/replaygain_no_data_attenuation_summary"
 			android:entryValues="@array/replaygain_no_data_attenuation_entries" 
