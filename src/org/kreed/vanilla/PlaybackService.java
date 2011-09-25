@@ -53,7 +53,6 @@ import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import org.kreed.vanilla.Song.NotPopulatedException;
 
 public final class PlaybackService extends Service implements Handler.Callback, MediaPlayer.OnCompletionListener, MediaPlayer.OnErrorListener, SharedPreferences.OnSharedPreferenceChangeListener, SongTimeline.Callback {
 	/**
@@ -448,22 +447,15 @@ public final class PlaybackService extends Service implements Handler.Callback, 
 		float volume;
 
 		if (mEnableReplayGain) {
-			AmplitudeGain trackGain;
+			AmplitudeGain trackGain = mCurrentSong.trackGain();
 
-			try {
-				ReplayGainInfo gainInfo = mCurrentSong.getReplayGainInfo();
-				if (gainInfo != null && gainInfo.hasTrackGain()) {
-					AmplitudeGain preampWhenReplayGainDb = AmplitudeGain.inDecibels(-mReplayGainMaxBoostDecibels.decibels());
-					trackGain = gainInfo.trackGain();
-					trackGain = trackGain.increment(preampWhenReplayGainDb);
-					Log.i("VanillaMusic", String.format("ReplayGain: setting track gain to %s", trackGain));
-				} else {
-					trackGain = mReplayGainNoDataAttenuationDecibels;
-					Log.i("VanillaMusic", String.format("ReplayGain: no replaygain info for this track, applying constant attenuation %s.", trackGain));
-				}
-			} catch (NotPopulatedException e) {
-				assert(false); // song should always be populated by this point.
+			if (trackGain != null) {
+				AmplitudeGain preampWhenReplayGainDb = AmplitudeGain.inDecibels(-mReplayGainMaxBoostDecibels.decibels());
+				trackGain = trackGain.increment(preampWhenReplayGainDb);
+				Log.i("VanillaMusic", String.format("ReplayGain: setting track gain to %s", trackGain));
+			} else {
 				trackGain = mReplayGainNoDataAttenuationDecibels;
+				Log.i("VanillaMusic", String.format("ReplayGain: no replaygain info for this track, applying constant attenuation %s.", trackGain));
 			}
 
 			volume = mUserVolume * trackGain.linearScale();

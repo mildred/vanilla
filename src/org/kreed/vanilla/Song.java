@@ -30,9 +30,17 @@ import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 import android.provider.MediaStore;
-
+import android.util.Log;
+import java.io.File;
 import java.io.FileDescriptor;
 import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.util.Iterator;
+import org.farng.mp3.id3.AbstractID3v2Frame;
+import org.farng.mp3.id3.FrameBodyTXXX;
+import org.farng.mp3.MP3File;
+import org.farng.mp3.TagException;
+import org.farng.mp3.TagFrameIdentifier;
 
 /**
  * Represents a Song backed by the MediaStore. Includes basic metadata and
@@ -135,7 +143,9 @@ public class Song implements Comparable<Song> {
 	 */
 	public int flags;
 
-	private ReplayGainInfo mReplayGainInfo;
+	private boolean mTagsLoaded;
+	private AmplitudeGain mAlbumGain;
+	private AmplitudeGain mTrackGain;
 
 	/**
 	 * Initialize the song with the specified id. Call populate to fill fields
@@ -193,32 +203,6 @@ public class Song implements Comparable<Song> {
 		if (song == null)
 			return 0;
 		return song.id;
-	}
-
-	public boolean isPopulated()
-	{
-		return path.length() != 0;
-	}
-
-	public static class NotPopulatedException extends Exception {
-		public NotPopulatedException(String detailMessage)
-		{
-			super(detailMessage);
-		}
-
-		private static final long serialVersionUID = 1;
-	};
-
-	public ReplayGainInfo getReplayGainInfo() throws NotPopulatedException
-	{
-		if (mReplayGainInfo == null) {
-			if (!isPopulated())
-				throw(new NotPopulatedException("The song must be populated before ReplayGain info can be retrieved."));
-
-			mReplayGainInfo = new ReplayGainInfo(path);
-		}
-
-		return mReplayGainInfo;
 	}
 
 	private static final BitmapFactory.Options BITMAP_OPTIONS = new BitmapFactory.Options();
@@ -294,5 +278,66 @@ public class Song implements Comparable<Song> {
 		if (albumId > other.albumId)
 			return 1;
 		return -1;
+	}
+
+	public AmplitudeGain albumGain()
+	{
+		if (!mTagsLoaded)
+			loadTags();
+		return mAlbumGain;
+	}
+
+	public AmplitudeGain trackGain()
+	{
+		if (!mTagsLoaded)
+			loadTags();
+		return mTrackGain;
+	}
+
+	private void loadTags()
+	{
+		try {
+			MP3File mp3file = new MP3File(new File(path), false);
+
+			if (mp3file.getID3v2Tag() != null) {
+				Iterator<AbstractID3v2Frame> iterator = mp3file.getID3v2Tag().getFrameOfType(TagFrameIdentifier.get("TXXX"));
+
+				if (iterator != null) {
+					while (iterator.hasNext()) {
+						FrameBodyTXXX txxx = (FrameBodyTXXX)iterator.next().getBody();
+						String description = txxx.getDescription();
+
+						if (description.equalsIgnoreCase("replaygain_track_gain"))
+							mTrackGain = parseReplayGainDbValue(txxx.getObject("Text").toString());
+						else if (description.equalsIgnoreCase("replaygain_album_gain"))
+							mAlbumGain = parseReplayGainDbValue(txxx.getObject("Text").toString());
+					}
+				}
+			}
+		} catch (IOException e) {
+			Log.d("VanillaMusic", "Failed to load tags", e);
+		} catch (TagException e) {
+			Log.d("VanillaMusic", "Failed to load tags", e);
+		}
+
+		mTagsLoaded = true;
+	}
+
+	/**
+	 * Parse the given ReplayGain tag.
+	 *
+	 * @param text The tag, in format x.xxxx dB.
+	 */
+	private static AmplitudeGain parseReplayGainDbValue(String text)
+	{
+		int dbIndex = text.toLowerCase().indexOf("db");
+		if (dbIndex == -1)
+			return null;
+		try {
+			return AmplitudeGain.inDecibels(Float.parseFloat(text.substring(0, dbIndex - 1)));
+		} catch (NumberFormatException e) {
+			Log.d("VanillaMusic", String.format("Failed to parse replaygain db value '%s'", text), e);
+			return null;
+		}
 	}
 }
