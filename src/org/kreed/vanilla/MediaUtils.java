@@ -478,4 +478,16 @@ public class MediaUtils {
 
 		return result;
 	}
+
+	public static final float DB_MIN = -144.0f; // Noise floor of 24-bit digital audio.
+
+	public static float decibelsToLinearScale(float decibels)
+	{
+		if (decibels == 0)
+			return 1.0f;
+		else if (decibels <= DB_MIN)
+			return 0.0f;
+		else
+			return (float)Math.pow(10.0f, decibels / 20.0f);
+	}
 }

@@ -36,6 +36,7 @@ import java.io.FileDescriptor;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Iterator;
+import org.farng.mp3.AbstractMP3FragmentBody;
 import org.farng.mp3.id3.AbstractID3v2Frame;
 import org.farng.mp3.id3.FrameBodyTXXX;
 import org.farng.mp3.MP3File;
@@ -144,8 +145,8 @@ public class Song implements Comparable<Song> {
 	public int flags;
 
 	private boolean mTagsLoaded;
-	private AmplitudeGain mAlbumGain;
-	private AmplitudeGain mTrackGain;
+	private float mAlbumGain = Float.MAX_VALUE;
+	private float mTrackGain = Float.MAX_VALUE;
 
 	/**
 	 * Initialize the song with the specified id. Call populate to fill fields
@@ -280,14 +281,14 @@ public class Song implements Comparable<Song> {
 		return -1;
 	}
 
-	public AmplitudeGain albumGain()
+	public float albumGain()
 	{
 		if (!mTagsLoaded)
 			loadTags();
 		return mAlbumGain;
 	}
 
-	public AmplitudeGain trackGain()
+	public float trackGain()
 	{
 		if (!mTagsLoaded)
 			loadTags();
@@ -301,16 +302,18 @@ public class Song implements Comparable<Song> {
 
 			if (mp3file.getID3v2Tag() != null) {
 				Iterator<AbstractID3v2Frame> iterator = mp3file.getID3v2Tag().getFrameOfType(TagFrameIdentifier.get("TXXX"));
-
 				if (iterator != null) {
 					while (iterator.hasNext()) {
-						FrameBodyTXXX txxx = (FrameBodyTXXX)iterator.next().getBody();
-						String description = txxx.getDescription();
+						AbstractMP3FragmentBody body = iterator.next().getBody();
+						if (body instanceof FrameBodyTXXX) {
+							FrameBodyTXXX txxx = (FrameBodyTXXX)body;
+							String description = txxx.getDescription();
 
-						if (description.equalsIgnoreCase("replaygain_track_gain"))
-							mTrackGain = parseReplayGainDbValue(txxx.getObject("Text").toString());
-						else if (description.equalsIgnoreCase("replaygain_album_gain"))
-							mAlbumGain = parseReplayGainDbValue(txxx.getObject("Text").toString());
+							if (description.equalsIgnoreCase("replaygain_track_gain"))
+								mTrackGain = parseReplayGainDbValue(txxx.getObject("Text").toString());
+							else if (description.equalsIgnoreCase("replaygain_album_gain"))
+								mAlbumGain = parseReplayGainDbValue(txxx.getObject("Text").toString());
+						}
 					}
 				}
 			}
@@ -327,17 +330,20 @@ public class Song implements Comparable<Song> {
 	 * Parse the given ReplayGain tag.
 	 *
 	 * @param text The tag, in format x.xxxx dB.
+	 * @return The linear scale of the gain, or Float.MAX_VALUE if no gain was
+	 * found.
 	 */
-	private static AmplitudeGain parseReplayGainDbValue(String text)
+	private static float parseReplayGainDbValue(String text)
 	{
 		int dbIndex = text.toLowerCase().indexOf("db");
 		if (dbIndex == -1)
-			return null;
+			return Float.MAX_VALUE;
 		try {
-			return AmplitudeGain.inDecibels(Float.parseFloat(text.substring(0, dbIndex - 1)));
+			float decibels = Float.parseFloat(text.substring(0, dbIndex - 1));
+			return MediaUtils.decibelsToLinearScale(decibels);
 		} catch (NumberFormatException e) {
 			Log.d("VanillaMusic", String.format("Failed to parse replaygain db value '%s'", text), e);
-			return null;
+			return Float.MAX_VALUE;
 		}
 	}
 }

@@ -230,8 +230,8 @@ public final class PlaybackService extends Service implements Handler.Callback, 
 	private boolean mVolumeFading;
 
 	private boolean mEnableReplayGain;
-	private AmplitudeGain mReplayGainMaxBoostDecibels;
-	private AmplitudeGain mReplayGainNoDataAttenuationDecibels;
+	private float mReplayGainPreAmp;
+	private float mNoDataGain;
 
 	@Override
 	public void onCreate()
@@ -263,10 +263,10 @@ public final class PlaybackService extends Service implements Handler.Callback, 
 		mHeadsetPlay = settings.getBoolean("headset_play", false);
 
 		mEnableReplayGain = settings.getBoolean("enable_replaygain", false);
-		mReplayGainMaxBoostDecibels =
-			AmplitudeGain.inDecibels(Float.valueOf(settings.getString("replaygain_max_boost", "3.0")));
-		mReplayGainNoDataAttenuationDecibels
-			= AmplitudeGain.inDecibels(Float.valueOf(settings.getString("replaygain_no_data_attenuation", "-10")));
+		mReplayGainPreAmp =
+			MediaUtils.decibelsToLinearScale(-Float.valueOf(settings.getString("replaygain_max_boost", "3.0")));
+		mNoDataGain =
+			MediaUtils.decibelsToLinearScale(Float.valueOf(settings.getString("replaygain_no_data_attenuation", "-10.0")));
 
 		PowerManager powerManager = (PowerManager)getSystemService(POWER_SERVICE);
 		mWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "VanillaMusicLock");
@@ -390,12 +390,12 @@ public final class PlaybackService extends Service implements Handler.Callback, 
 			mEnableReplayGain = settings.getBoolean(key, false);
 			updateVolume();
 		} else if ("replaygain_max_boost".equals(key)) {
-			mReplayGainMaxBoostDecibels = AmplitudeGain.inDecibels(
-					Float.valueOf(settings.getString(key, "3.0"))
+			mReplayGainPreAmp = MediaUtils.decibelsToLinearScale(
+					-Float.valueOf(settings.getString(key, "3.0"))
 				);
 			updateVolume();
 		} else if ("replaygain_no_data_attenuation".equals(key)) {
-			mReplayGainNoDataAttenuationDecibels = AmplitudeGain.inDecibels(
+			mNoDataGain = MediaUtils.decibelsToLinearScale(
 					Float.valueOf(settings.getString(key, "-10.0"))
 				);
 			updateVolume();
@@ -447,18 +447,17 @@ public final class PlaybackService extends Service implements Handler.Callback, 
 		float volume;
 
 		if (mEnableReplayGain) {
-			AmplitudeGain trackGain = mCurrentSong.trackGain();
+			float trackGain = mCurrentSong.trackGain();
 
-			if (trackGain != null) {
-				AmplitudeGain preampWhenReplayGainDb = AmplitudeGain.inDecibels(-mReplayGainMaxBoostDecibels.decibels());
-				trackGain = trackGain.increment(preampWhenReplayGainDb);
+			if (trackGain != Float.MAX_VALUE) {
+				trackGain *= mReplayGainPreAmp;
 				Log.i("VanillaMusic", String.format("ReplayGain: setting track gain to %s", trackGain));
 			} else {
-				trackGain = mReplayGainNoDataAttenuationDecibels;
+				trackGain = mNoDataGain;
 				Log.i("VanillaMusic", String.format("ReplayGain: no replaygain info for this track, applying constant attenuation %s.", trackGain));
 			}
 
-			volume = mUserVolume * trackGain.linearScale();
+			volume = mUserVolume * trackGain;
 		} else {
 			volume = mUserVolume;
 		}
