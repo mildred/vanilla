@@ -106,6 +106,13 @@ THE SOFTWARE.
 			android:entries="@array/swipe_action_entries"
 			android:entryValues="@array/entry_values"
 			android:defaultValue="2" />
+		<ListPreference
+			android:key="shake_action"
+			android:title="@string/shake_action_title"
+			android:summary="@string/shake_action_summary"
+			android:entries="@array/swipe_action_entries"
+			android:entryValues="@array/entry_values"
+			android:defaultValue="0" />
 		<CheckBoxPreference
 			android:key="disable_cover_art"
 			android:title="@string/disable_cover_art_title"

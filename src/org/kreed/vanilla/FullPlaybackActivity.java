@@ -24,9 +24,14 @@ package org.kreed.vanilla;
 
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
+import android.os.SystemClock;
 import android.text.format.DateUtils;
 import android.util.Log;
 import android.view.Gravity;
@@ -40,11 +45,20 @@ import android.widget.LinearLayout;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
-public class FullPlaybackActivity extends PlaybackActivity implements SeekBar.OnSeekBarChangeListener {
+public class FullPlaybackActivity extends PlaybackActivity implements SeekBar.OnSeekBarChangeListener, SensorEventListener {
 	public static final int DISPLAY_INFO_OVERLAP = 0;
 	public static final int DISPLAY_INFO_BELOW = 1;
 	public static final int DISPLAY_INFO_WIDGETS = 2;
 	public static final int DISPLAY_INFO_WIDGETS_ZOOMED = 3;
+
+	/**
+	 * Changes in acceleration greater than this number are treated as shakes.
+	 */
+	private static final float SHAKE_THRESHOLD = 0.25f;
+	/**
+	 * Minimum time between shake actions.
+	 */
+	private static final int MIN_SHAKE_PERIOD = 500;
 
 	/**
 	 * A Handler running on the UI thread, in contrast with mHandler which runs
@@ -78,6 +92,18 @@ public class FullPlaybackActivity extends PlaybackActivity implements SeekBar.On
 	 * Cached StringBuilder for formatting track position.
 	 */
 	private final StringBuilder mTimeBuilder = new StringBuilder();
+
+	/**
+	 * What to do when an accelerometer shake is detected.
+	 */
+	private int mShakeAction;
+
+	private SensorManager mSensorManager;
+	private float mLastX;
+	private float mLastY;
+	private float mLastZ;
+	private long mLastUpdate;
+	private long mLastShake;
 
 	@Override
 	public void onCreate(Bundle icicle)
@@ -142,6 +168,19 @@ public class FullPlaybackActivity extends PlaybackActivity implements SeekBar.On
 		mSeekBar.setMax(1000);
 		mSeekBar.setOnSeekBarChangeListener(this);
 		setDuration(0);
+
+		mSensorManager = (SensorManager)getSystemService(SENSOR_SERVICE);
+	}
+
+	@Override
+	public void onStart()
+	{
+		super.onStart();
+
+		SharedPreferences settings = PlaybackService.getSettings(this);
+		mShakeAction = Integer.parseInt(settings.getString("shake_action", "0"));
+		if (mShakeAction != PlaybackActivity.ACTION_NOTHING)
+			mSensorManager.registerListener(this, mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_UI);
 	}
 
 	@Override
@@ -150,6 +189,13 @@ public class FullPlaybackActivity extends PlaybackActivity implements SeekBar.On
 		super.onResume();
 		mPaused = false;
 		updateProgress();
+	}
+
+	@Override
+	public void onStop()
+	{
+		mSensorManager.unregisterListener(this);
+		super.onStop();
 	}
 
 	@Override
@@ -405,5 +451,32 @@ public class FullPlaybackActivity extends PlaybackActivity implements SeekBar.On
 			toggleControls();
 		else
 			super.performAction(action);
+	}
+
+	@Override
+	public void onSensorChanged(SensorEvent se)
+	{
+		long now = SystemClock.elapsedRealtime();
+		// Acceleration for each axis
+		float x = se.values[0];
+		float y = se.values[1];
+		float z = se.values[2];
+
+		// Treat a large change in acceleration as a shake
+		float jerk = Math.abs(x + y + z - mLastX - mLastY - mLastZ) / (now - mLastUpdate);
+		if (jerk > SHAKE_THRESHOLD && now - mLastShake > MIN_SHAKE_PERIOD) {
+			mLastShake = now;
+			performAction(mShakeAction);
+		}
+
+		mLastUpdate = now;
+		mLastX = x;
+		mLastY = y;
+		mLastZ = z;
+	}
+
+	@Override
+	public void onAccuracyChanged(Sensor sensor, int accuracy)
+	{
 	}
 }
