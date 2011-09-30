@@ -31,17 +31,9 @@ import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 import android.provider.MediaStore;
 import android.util.Log;
-import java.io.File;
 import java.io.FileDescriptor;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.util.Iterator;
-import org.farng.mp3.AbstractMP3FragmentBody;
-import org.farng.mp3.id3.AbstractID3v2Frame;
-import org.farng.mp3.id3.FrameBodyTXXX;
-import org.farng.mp3.MP3File;
-import org.farng.mp3.TagException;
-import org.farng.mp3.TagFrameIdentifier;
 
 /**
  * Represents a Song backed by the MediaStore. Includes basic metadata and
@@ -298,32 +290,20 @@ public class Song implements Comparable<Song> {
 	private void loadTags()
 	{
 		try {
-			MP3File mp3file = new MP3File(new File(path), false);
-
-			if (mp3file.getID3v2Tag() != null) {
-				Iterator<AbstractID3v2Frame> iterator = mp3file.getID3v2Tag().getFrameOfType(TagFrameIdentifier.get("TXXX"));
-				if (iterator != null) {
-					while (iterator.hasNext()) {
-						AbstractMP3FragmentBody body = iterator.next().getBody();
-						if (body instanceof FrameBodyTXXX) {
-							FrameBodyTXXX txxx = (FrameBodyTXXX)body;
-							String description = txxx.getDescription();
-
-							if (description.equalsIgnoreCase("replaygain_track_gain"))
-								mTrackGain = parseReplayGainDbValue(txxx.getObject("Text").toString());
-							else if (description.equalsIgnoreCase("replaygain_album_gain"))
-								mAlbumGain = parseReplayGainDbValue(txxx.getObject("Text").toString());
-						}
-					}
-				}
-			}
+			ID3Reader.readID3(this);
 		} catch (IOException e) {
-			Log.d("VanillaMusic", "Failed to load tags", e);
-		} catch (TagException e) {
 			Log.d("VanillaMusic", "Failed to load tags", e);
 		}
 
 		mTagsLoaded = true;
+	}
+
+	public void processTag(String description, String value)
+	{
+		if ("replaygain_track_gain".equals(description))
+			mTrackGain = parseReplayGainDbValue(value);
+		else if ("replaygain_album_gain".equals(description))
+			mAlbumGain = parseReplayGainDbValue(value);
 	}
 
 	/**
@@ -338,6 +318,7 @@ public class Song implements Comparable<Song> {
 		int dbIndex = text.toLowerCase().indexOf("db");
 		if (dbIndex == -1)
 			return Float.MAX_VALUE;
+
 		try {
 			float decibels = Float.parseFloat(text.substring(0, dbIndex - 1));
 			return MediaUtils.decibelsToLinearScale(decibels);
